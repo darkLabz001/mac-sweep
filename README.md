@@ -54,6 +54,12 @@ Build a Finder-launchable app bundle:
 open ./MacSweep.app
 ```
 
+Run the fabricated demo mode for screenshots or recordings. It never reads your filesystem and cannot clean anything:
+
+```sh
+MAC_SWEEP_DEMO=1 ./MacSweep.app/Contents/MacOS/MacSweep
+```
+
 Install to your user Applications folder:
 
 ```sh

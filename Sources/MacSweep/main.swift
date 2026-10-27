@@ -172,6 +172,16 @@ final class SweepModel: ObservableObject {
         guard !isScanning else { return }
         isScanning = true
         message = "Checking your Mac..."
+        if ProcessInfo.processInfo.environment["MAC_SWEEP_DEMO"] == "1" {
+            let found = Self.demoItems()
+            items = found
+            installedApps = Self.demoApps()
+            selectedIDs = Set(found.filter { Self.isAutoSelected($0.category) }.map(\.id))
+            lastScan = Date()
+            isScanning = false
+            message = "Demo scan complete — fabricated data only"
+            return
+        }
         let home = FileManager.default.homeDirectoryForCurrentUser
         Task.detached(priority: .userInitiated) {
             let found = Self.findItems(home: home)
@@ -190,11 +200,32 @@ final class SweepModel: ObservableObject {
     func runProtectionChecks() {
         guard !isCheckingProtection else { return }
         isCheckingProtection = true
+        if ProcessInfo.processInfo.environment["MAC_SWEEP_DEMO"] == "1" {
+            protectionChecks = [
+                ProtectionCheck(id: "filevault", title: "FileVault encryption", icon: "lock.shield", state: .secure, detail: "Encryption is enabled (demo result)"),
+                ProtectionCheck(id: "firewall", title: "Application firewall", icon: "firewall", state: .secure, detail: "Firewall is enabled (demo result)"),
+                ProtectionCheck(id: "gatekeeper", title: "Gatekeeper", icon: "checkmark.seal", state: .secure, detail: "Assessments enabled (demo result)"),
+                ProtectionCheck(id: "sip", title: "System Integrity Protection", icon: "shield.lefthalf.filled", state: .secure, detail: "Enabled (demo result)"),
+                ProtectionCheck(id: "updates", title: "Automatic updates", icon: "arrow.down.circle", state: .secure, detail: "Automatic checking enabled (demo result)")
+            ]
+            isCheckingProtection = false
+            return
+        }
         Task.detached(priority: .userInitiated) {
             let checks = Self.performProtectionChecks()
             await MainActor.run {
                 self.protectionChecks = checks
                 self.isCheckingProtection = false
+            }
+        }
+    }
+
+    func runDemoSequence() {
+        guard ProcessInfo.processInfo.environment["MAC_SWEEP_DEMO"] == "1" else { return }
+        Task { @MainActor in
+            for category in [SweepCategory.smartScan, .myClutter, .updater, .protection, .smartScan] {
+                try? await Task.sleep(for: .seconds(2))
+                selectedCategory = category
             }
         }
     }
@@ -323,6 +354,29 @@ final class SweepModel: ObservableObject {
             ProtectionCheck(id: "gatekeeper", title: "Gatekeeper", icon: "checkmark.seal", state: gatekeeper.output.localizedCaseInsensitiveContains("assessments enabled") ? .secure : .attention, detail: gatekeeper.output.isEmpty ? "Status unavailable" : gatekeeper.output.trimmingCharacters(in: .whitespacesAndNewlines)),
             ProtectionCheck(id: "sip", title: "System Integrity Protection", icon: "shield.lefthalf.filled", state: sip.output.localizedCaseInsensitiveContains("enabled") ? .secure : .attention, detail: sip.output.isEmpty ? "Status unavailable" : sip.output.trimmingCharacters(in: .whitespacesAndNewlines)),
             ProtectionCheck(id: "updates", title: "Automatic updates", icon: "arrow.down.circle", state: updates.output.localizedCaseInsensitiveContains("on") ? .secure : .attention, detail: updates.output.isEmpty ? "Status unavailable" : updates.output.trimmingCharacters(in: .whitespacesAndNewlines))
+        ]
+    }
+
+    private nonisolated static func demoItems() -> [SweepItem] {
+        let root = URL(fileURLWithPath: "/Users/demo")
+        let entries: [(String, SweepCategory, Int64)] = [
+            ("Library/Caches/Studio/cache.bundle", .systemJunk, 4_200_000_000),
+            ("Library/Logs/agent/session.log", .systemJunk, 820_000_000),
+            ("Library/Mail Downloads/Design-assets.zip", .mailAttachments, 1_600_000_000),
+            ("Downloads/archive-2024.zip", .largeFiles, 2_800_000_000),
+            ("Documents/duplicate-presentation.key", .duplicates, 760_000_000),
+            ("Downloads/duplicate-presentation-copy.key", .duplicates, 760_000_000)
+        ]
+        return entries.map { path, category, bytes in
+            SweepItem(url: root.appending(path: path), category: category, bytes: bytes, modified: Date().addingTimeInterval(-45 * 86400))
+        }
+    }
+
+    private nonisolated static func demoApps() -> [InstalledApp] {
+        [
+            InstalledApp(url: URL(fileURLWithPath: "/Applications/Orbit.app"), name: "Orbit", version: "4.2.1", size: 1_200_000_000),
+            InstalledApp(url: URL(fileURLWithPath: "/Applications/Signal Forge.app"), name: "Signal Forge", version: "2.8.0", size: 640_000_000),
+            InstalledApp(url: URL(fileURLWithPath: "/Applications/Pixel Lab.app"), name: "Pixel Lab", version: "7.1.3", size: 2_100_000_000)
         ]
     }
 
@@ -461,6 +515,7 @@ struct ContentView: View {
         .task {
             model.scan()
             model.runProtectionChecks()
+            model.runDemoSequence()
         }
         .alert("Move selected files to Trash?", isPresented: $showCleanupConfirmation) {
             Button("Cancel", role: .cancel) {}
