@@ -1,0 +1,17 @@
+.build/
+MacSweep.app/
+DerivedData/
+*.xcodeproj/
+*.xcworkspace/
+.DS_Store
+*.swp
+*.swo
+
+# Local demo/build output
+dist/
+screenshots/
+
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
